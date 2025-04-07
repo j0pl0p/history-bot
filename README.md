@@ -1,2 +1,2 @@
 # history-bot
-крези бот
+[📖бот для изучения истории ЗДЕСЬ!!!📖](https://t.me/historycrazybot)
