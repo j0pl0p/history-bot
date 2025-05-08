@@ -1,6 +1,5 @@
 # -*- encoding: utf-8 -*-
 import json
-import time
 
 import telebot
 from telebot import types
@@ -9,15 +8,13 @@ from secret_file import secret_token
 
 bot = telebot.TeleBot(secret_token())
 
-user_data = {}
-
 with open('src/lessons.json', 'r', encoding='utf-8') as lesson_data_file:
     lesson_pages = json.load(lesson_data_file)
-
 with open('src/tests.json', 'r', encoding='utf-8') as tests_data_file:
     tests = json.load(tests_data_file)['tests']
 
-lessons = lesson_pages.keys()
+user_data = dict()
+lessons = list(lesson_pages.keys())
 
 
 @bot.message_handler(func=lambda message: message.text in ['/start', '🔠 Главное меню'])
@@ -40,6 +37,7 @@ def choose_lesson_handler(message):
     new_markup.add(
         *[types.KeyboardButton(name) for name in lessons],
         types.KeyboardButton('🔠 Главное меню'),
+        types.KeyboardButton('♻ Источники')
     )
     bot.send_message(message.chat.id, 'Выбери главу', reply_markup=new_markup)
 
@@ -58,6 +56,10 @@ def choose_test_handler(message):
 def start_test_handler(message):
     user_id = message.from_user.id
     selected_test = next(test for test in tests if test['name'] == message.text)
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add('🔄 Начать заново')
+    markup.add('🔠 Главное меню')
+    bot.send_message(message.chat.id, f'Начинаем... ', reply_markup=markup)
 
     user_data[user_id] = {'test': selected_test, 'question_index': 0, 'score': 0}
     send_test_question(message.chat.id, user_id)
@@ -75,8 +77,10 @@ def send_test_question(chat_id, user_id):
 
     questions = test_data['questions']
     if question_index >= len(questions):
-        bot.send_message(chat_id, f'Тест завершен!\nВаш результат: {score} из {len(questions)}.')
-        del user_data[user_id]
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        markup.add('🔄 Начать заново')
+        markup.add('🔠 Главное меню')
+        bot.send_message(chat_id, f'Тест завершен!\nВаш результат: {score} из {len(questions)}.', reply_markup=markup)
         return
 
     question = questions[question_index]
@@ -84,11 +88,19 @@ def send_test_question(chat_id, user_id):
     for idx, answer in enumerate(question['answers']):
         markup.add(types.InlineKeyboardButton(answer, callback_data=f'test_answer_{idx}'))
 
-    bot.send_message(
-        chat_id,
-        f"🔹 Вопрос {question_index + 1}/{len(questions)}:\n{question['task']}",
-        reply_markup=markup
-    )
+    bot.send_message(chat_id, f"🔹 Вопрос {question_index + 1}/{len(questions)}:\n{question['task']}",
+                     reply_markup=markup)
+
+
+@bot.message_handler(func=lambda message: message.text == '🔄 Начать заново')
+def restart_test_handler(message):
+    user_id = message.from_user.id
+    if user_id not in user_data or 'test' not in user_data[user_id]:
+        bot.send_message(message.chat.id, 'Вы не начали тест. Пожалуйста, выберите тест в меню.')
+        return
+    selected_test = user_data[user_id]['test']
+    user_data[user_id] = {'test': selected_test, 'question_index': 0, 'score': 0}
+    send_test_question(message.chat.id, user_id)
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('test_answer_'))
@@ -121,11 +133,21 @@ def test_answer_handler(call):
 @bot.message_handler(func=lambda message: message.text == '❌ Я пожалуй откажусь')
 def rejection_handler(message):
     markup = types.ReplyKeyboardRemove()
-    bot.send_message(message.chat.id, 'ля ты криса')
-    with open('src/photo.bmp', 'rb') as photo:
-        for i in range(50):
-            photo.seek(0)
-            bot.send_photo(message.chat.id, photo)
+    bot.send_message(message.chat.id, 'зря', reply_markup=markup)
+    # time.sleep(1.5)
+    # with open('src/photo.bmp', 'rb') as photo:
+    #     for i in range(50):
+    #         for j in ids:
+    #             photo.seek(0)
+    #             bot.send_photo(j, photo)
+
+
+@bot.message_handler(func=lambda message: message.text in lessons)
+def lesson_handler(message):
+    user_id = message.from_user.id
+    lesson = message.text
+    user_data[user_id] = {'lesson': lesson, 'page': 0}
+    send_lesson_page(message.chat.id, user_id)
 
 
 def send_lesson_page(chat_id, user_id):
@@ -139,46 +161,26 @@ def send_lesson_page(chat_id, user_id):
     pages = lesson_pages[lesson]
 
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    buttons = []
     if page > 0:
-        buttons.append('⬅ Назад')
+        markup.add('⬅ Назад')
+    if page == 0 and lessons.index(lesson) > 0:
+        markup.add('⏮ К предыдущей главе')
+    markup.add('🔠 Главное меню')
     if page < len(pages) - 1:
-        buttons.append('➡ Далее')
-    if page == len(pages) - 1:
-        buttons.append('📖 К тестам')
-    buttons.append('🔠 Главное меню')
-    markup.add(*[types.KeyboardButton(b) for b in buttons])
+        markup.add('➡ Далее')
+    if page == len(pages) - 1 and lessons.index(lesson) < len(lessons) - 1:
+        markup.add('⏭ К следующей главе')
 
-    bot.send_message(chat_id, pages[page], reply_markup=markup)
+    bot.send_message(chat_id, f'📖 {lesson} (Страница {page + 1}/{len(pages)})\n\n' + pages[page], reply_markup=markup)
 
 
-@bot.message_handler(func=lambda msg: msg.text in ['⬅ Назад', '➡ Далее'])
+@bot.message_handler(func=lambda message: message.text in [
+    '⬅ Назад',
+    '➡ Далее',
+    '⏮ К предыдущей главе',
+    '⏭ К следующей главе'
+])
 def paginate_handler(message):
-    user_id = message.from_user.id
-    if user_id not in user_data:
-        bot.send_message(message.chat.id, 'Сначала выбери урок')
-        return
-
-    direction = message.text
-    if direction == '➡ Далее':
-        user_data[user_id]['page'] += 1
-    elif direction == '⬅ Назад':
-        user_data[user_id]['page'] -= 1
-
-    send_lesson_page(message.chat.id, user_id)
-
-
-@bot.message_handler(func=lambda message: message.text in lesson_pages)
-def lesson_handler(message):
-    user_id = message.from_user.id
-    lesson = message.text
-
-    user_data[user_id] = {'lesson': lesson, 'page': 0}
-    send_lesson_page(message.chat.id, user_id)
-
-
-@bot.message_handler(func=lambda msg: msg.text == '⏭ Следующая глава')
-def next_chapter_handler(message):
     user_id = message.from_user.id
     data = user_data.get(user_id)
 
@@ -186,26 +188,23 @@ def next_chapter_handler(message):
         bot.send_message(message.chat.id, 'Сначала выбери урок')
         return
 
-    current_lesson = data['lesson']
-    current_page = data['page']
+    lesson = data['lesson']
+    page = data['page']
 
-    pages = lesson_pages[current_lesson]
-
-    if current_page + 1 < len(pages):
-        user_data[user_id]['page'] += 1
-        send_lesson_page(message.chat.id, user_id)
-        return
-
-    lesson_index = lessons.index(current_lesson)
-    if lesson_index + 1 >= len(lessons):
-        bot.send_message(message.chat.id, 'Это была последняя глава 🎉')
-        return
-
-    next_lesson = lessons[lesson_index + 1]
-    user_data[user_id] = {
-        'lesson': next_lesson,
-        'page': 0
-    }
+    if message.text == '➡ Далее' and page < len(lesson_pages[lesson]) - 1:
+        data['page'] += 1
+    elif message.text == '⬅ Назад' and page > 0:
+        data['page'] -= 1
+    elif message.text == '⏭ К следующей главе':
+        next_index = lessons.index(lesson) + 1
+        if next_index < len(lessons):
+            data['lesson'] = lessons[next_index]
+            data['page'] = 0
+    elif message.text == '⏮ К предыдущей главе':
+        prev_index = lessons.index(lesson) - 1
+        if prev_index >= 0:
+            data['lesson'] = lessons[prev_index]
+            data['page'] = len(lesson_pages[lessons[prev_index]]) - 1
 
     send_lesson_page(message.chat.id, user_id)
 
