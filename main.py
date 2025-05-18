@@ -12,9 +12,18 @@ with open('src/lessons.json', 'r', encoding='utf-8') as lesson_data_file:
     lesson_pages = json.load(lesson_data_file)
 with open('src/tests.json', 'r', encoding='utf-8') as tests_data_file:
     tests = json.load(tests_data_file)['tests']
+with open('src/references.txt', 'r', encoding='utf-8') as ref_data_file:
+    references_text = ref_data_file.read()
+
 
 user_data = dict()
 lessons = list(lesson_pages.keys())
+
+def send_long_text(chat_id, text, reply_markup=None):
+    MAX_LEN = 4000-13
+    for i in range(0, len(text), MAX_LEN):
+        chunk = text[i:i + MAX_LEN]
+        bot.send_message(chat_id, chunk, reply_markup=reply_markup if i == 0 else None)
 
 
 @bot.message_handler(func=lambda message: message.text in ['/start', '🔠 Главное меню'])
@@ -40,6 +49,15 @@ def choose_lesson_handler(message):
         types.KeyboardButton('♻ Источники')
     )
     bot.send_message(message.chat.id, 'Выбери главу', reply_markup=new_markup)
+
+
+@bot.message_handler(func=lambda message: message.text == '♻ Источники')
+def show_references_handler(message):
+    new_markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    new_markup.add(
+        types.KeyboardButton('🔠 Главное меню'),
+    )
+    send_long_text(message.chat.id, references_text, reply_markup=new_markup)
 
 
 @bot.message_handler(func=lambda message: message.text in ['❓ Тесты', '📖 К тестам'])
@@ -134,12 +152,10 @@ def test_answer_handler(call):
 def rejection_handler(message):
     markup = types.ReplyKeyboardRemove()
     bot.send_message(message.chat.id, 'зря', reply_markup=markup)
-    # time.sleep(1.5)
     # with open('src/photo.bmp', 'rb') as photo:
     #     for i in range(50):
-    #         for j in ids:
-    #             photo.seek(0)
-    #             bot.send_photo(j, photo)
+    #         photo.seek(0)
+    #         bot.send_photo(message.chat.id, photo)
 
 
 @bot.message_handler(func=lambda message: message.text in lessons)
